@@ -1,7 +1,5 @@
-#based on code from https://blog.ipswitch.com/how-to-create-an-ec2-instance-with-python
 import boto3
 import os
-import bcolors
 from botocore.exceptions import ClientError
 import time
 
@@ -171,9 +169,13 @@ def security_group_delete(ec2, client, security_group_name):
           security_groups = client.describe_security_groups()
           for sg in security_groups['SecurityGroups']:
                if sg['GroupName'] == security_group_name:
+                    print("security group existed")
                     security_group_id = sg['GroupId']
-          client.delete_security_group(GroupId=security_group_id)
-          print('Security group deleted successfully!')
+          try:
+               client.delete_security_group(GroupId=security_group_id)
+               print('Security group deleted successfully!')
+          except ClientError as e:
+               print("Couldn't delete security group")
      except ClientError as e:
           print("Security group didn't exist")
 
@@ -301,7 +303,6 @@ def create_loadbalancer(client, client_lb, security_group_name):
      subnets = []
      for subnet in response['Subnets']:
           subnets.append(subnet['SubnetId'])
-          print(subnet['SubnetId'])
      response = client_lb.create_load_balancer(
           Name='mayra-loadbalancer',
           Subnets=[
@@ -333,6 +334,37 @@ def create_loadbalancer(client, client_lb, security_group_name):
 
      return lb_arn
 
+def delete_loadbalancer(client):
+     erased = 0
+     arn = ''
+     response = client.describe_load_balancers()
+     for lb in response['LoadBalancers']:
+          if lb['LoadBalancerName'] == 'mayra-loadbalancer':
+               arn = lb['LoadBalancerArn']
+               client.delete_load_balancer(
+                    LoadBalancerArn=arn
+               ) 
+     while erased == 0:
+          erased = 1
+          response1 = client.describe_load_balancers()
+          for lb in response1['LoadBalancers']:
+               if lb['LoadBalancerName'] == 'mayra-loadbalancer':
+                    erased = 0
+     print("Load Balancer deleted successfully")
+     return arn
+
+def delete_target_group(client):
+     response = client.describe_target_groups()
+     for tg in response['TargetGroups']:
+          if tg['TargetGroupName'] == 'mayra-tg':
+               try:
+                    response = client.delete_target_group(
+                         TargetGroupArn=tg['TargetGroupArn']
+                    )
+                    print("deleted target group")
+               except ClientError as e:
+                    print(e)
+
 def create_target_group(client, client_lb):
      response = client.describe_vpcs()
      VPC_id = response['Vpcs'][0]['VpcId']
@@ -340,7 +372,7 @@ def create_target_group(client, client_lb):
      response = client_lb.create_target_group(
           Name = 'mayra-tg',
           Protocol = 'HTTP',
-          Port = 8000,
+          Port = 8080,
           VpcId = VPC_id,
           HealthCheckProtocol = 'HTTP',
           HealthCheckPath = '/healthcheck',
@@ -360,7 +392,7 @@ def create_listener(client_lb, lb_arn, tg_arn):
      response = client_lb.create_listener(
                LoadBalancerArn = lb_arn,
                Protocol='HTTP',
-               Port=8000,
+               Port=8080,
                DefaultActions=[
                     {
                          'Type': 'forward',
@@ -368,30 +400,75 @@ def create_listener(client_lb, lb_arn, tg_arn):
                     }
                ])
 
-def create_autoscaling(client_as, tg_arn, instance_id):
-     response = client_as.create_auto_scaling_group(
-     AutoScalingGroupName='MayAutoscaling',
-     MinSize=1,
-     MaxSize=3,
-     InstanceId = instance_id,
-     DesiredCapacity=1,
-     TargetGroupARNs=[
-          tg_arn,
-     ],
-     Tags=[
-          {
-               'Key'  : 'Name',
-               'Value': 'MayAutoscaling' 
-          }]     
-     )
-
-def delete_autoscaling(client):
-     response = client.delete_auto_scaling_group(
-          AutoScalingGroupName='MayAutoscaling',
-          ForceDelete=True
-     )
-
+def delete_listener(client):
+     lb_arn = ''
+     response = client.describe_load_balancers()
+     for lb in response['LoadBalancers']:
+          if lb['LoadBalancerName'] == 'mayra-loadbalancer':
+               arn = lb['LoadBalancerArn']
+     if lb_arn != '':
+          response = client.describe_listeners(LoadBalancerArn=lb_arn)
           
+          for listener in response['Listeners']:
+               print("AAAAAAAAAA", listener)
+               if listener['LoadBalancerArn'] == lb_arn:
+                    "Found the right listener"
+                    try:
+                         response = client.delete_listener(
+                              ListenerArn=listener['ListenerArn']
+                         )
+                    except ClientError as e:
+                         print(e)
+     else: 
+          print("Load Balancer wasn't found")
+
+
+def create_autoscaling(client_as, tg_arn, instance_id):
+     erased = 0
+     #esperando ate que seja realmente deletada
+     while erased == 0: 
+          response = client_as.describe_auto_scaling_groups()
+          erased = 1
+          for asg in response['AutoScalingGroups']:
+               if asg['AutoScalingGroupName'] == 'MayAutoscaling':
+                    erased = 0
+     print("nao exite o auto scaling tamo bem")
+     try:
+          response = client_as.create_auto_scaling_group(
+               AutoScalingGroupName='MayAutoscaling',
+               MinSize=1,
+               MaxSize=3,
+               InstanceId = instance_id,
+               DesiredCapacity=1,
+               TargetGroupARNs=[
+                    tg_arn,
+               ],
+               Tags=[
+                    {
+                         'Key'  : 'Name',
+                         'Value': 'MayAutoscaling' 
+                    }]     
+          )
+     except ClientError as e:
+          print(e)
+     
+def delete_autoscaling(client):
+     response = client.describe_auto_scaling_groups()
+     for asg in response['AutoScalingGroups']:
+          if asg['AutoScalingGroupName'] == 'MayAutoscaling':
+               response2 = client.delete_auto_scaling_group(
+                    AutoScalingGroupName='MayAutoscaling',
+                    ForceDelete=True
+               )
+     print("Autoscaling deleted successfully")
+
+def delete_launch_configuration(client):
+     try:
+          response = client.delete_launch_configuration(
+          LaunchConfigurationName='MayAutoscaling'
+     )   
+     except ClientError as e:
+          print(e)
 
 userdata_oh = '''#!/bin/bash
                sudo apt update
@@ -425,6 +502,11 @@ userdata_nv = '''#!/bin/bash
 checks_if_key_exists_locally_then_deletes('ec2-keypair_nv')
 checks_if_key_exists_remotely_then_deletes('ec2-keypair_nv', client_nv)
 create_key(ec2_nv, 'ec2-keypair_nv', client_nv)
+delete_autoscaling(client_as)
+delete_launch_configuration(client_as)
+delete_listener(client_lb)
+lb_arn = delete_loadbalancer(client_lb)
+delete_target_group(client_lb)
 delete_instances(ec2_nv, client_nv, 'ec2-keypair_nv')
 security_group_delete(ec2_nv, client_nv,'security_orm')
 security_group_delete(ec2_nv, client_nv, 'security_loadbalancer')
@@ -432,14 +514,9 @@ security_groups(client_nv, 'security_loadbalancer')
 security_groups(client_nv, 'security_orm')
 instance_nv_id = create_instance(ec2_nv, client_nv, nv_ami, 'ec2-keypair_nv', 'security_orm', userdata_nv)[0]
 
-delete_ami(client_nv, 'customizedAMI')
-#ami_id = create_ami(client_nv, 'ec2-keypair_nv', 'customizedAMI')
-#delete_instances(ec2_nv, client_nv, 'ec2-keypair_nv')
-
 lb_arn = create_loadbalancer(client_nv, client_lb, 'security_loadbalancer')
 tg_arn = create_target_group(client_nv, client_lb)
 create_listener(client_lb, lb_arn, tg_arn)
-delete_autoscaling(client_as)
 create_autoscaling(client_as, tg_arn, instance_nv_id)
 
 
