@@ -6,7 +6,7 @@ import json
 for arg in sys.argv:
     print(arg)
 
-url = 'http://mayra-loadbalancer-1971717438.us-east-1.elb.amazonaws.com:8080/tasks'
+url = 'http://mayra-loadbalancer-1088975921.us-east-1.elb.amazonaws.com:8080/tasks'
 
 def get():
     response = requests.get(url + '/get')
@@ -23,6 +23,10 @@ def delete():
     print("A resposta da requisição foi:")
     print(response.text)
 
+# para fazer um request, rodar com:
+# get: python client.py get
+# post: python client.py add titulo descricao
+# delete: python client.py delete
 if __name__ ==  '__main__':
     if sys.argv[1] == 'get':
         print("Procurando a rota /get...")

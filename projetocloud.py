@@ -39,6 +39,7 @@ def checks_if_key_exists_remotely_then_deletes(key_name, client):
                )
                print("Existed remotely, successfully deleted")
 
+# Creates key
 def create_key(ec2, key_name, client):
      # create a file to store the key locally
      outfile = open(key_name + '.pem','w')
@@ -52,6 +53,7 @@ def create_key(ec2, key_name, client):
      outfile.close()
      print("Key created locally and remotely")
 
+# Creates the security group for the DB instance
 def security_groups_create_postgres(client, security_group_name, VPC_id):
      try:
           response = client.create_security_group(GroupName=security_group_name,
@@ -84,6 +86,7 @@ def security_groups_create_postgres(client, security_group_name, VPC_id):
      except ClientError as e:
           print(e)
 
+# Creates the security group for the ORM instance
 def security_groups_create_orm(client, security_group_name, VPC_id):
      try:
           response = client.create_security_group(GroupName=security_group_name,
@@ -116,6 +119,7 @@ def security_groups_create_orm(client, security_group_name, VPC_id):
      except ClientError as e:
           print(e)
 
+# Creates the security group for the loadbalancer instance
 def security_groups_create_loadbalancer(client, security_group_name, VPC_id):
      try:
           response = client.create_security_group(GroupName=security_group_name,
@@ -150,6 +154,7 @@ def security_groups_create_loadbalancer(client, security_group_name, VPC_id):
      except ClientError as e:
           print(e)
 
+# Creates the right security group
 def security_groups(client, security_group_name):
      response = client.describe_vpcs()
      VPC_id = response['Vpcs'][0]['VpcId']
@@ -160,8 +165,9 @@ def security_groups(client, security_group_name):
      elif security_group_name == 'security_loadbalancer': 
           security_id = security_groups_create_loadbalancer(client, security_group_name, VPC_id)
      else:
-          print('nao deu certo nao')
+          print('Nome do security group desconhecido')
 
+# Deletes the right security group
 def security_group_delete(ec2, client, security_group_name):
      security_group_id = ''
 
@@ -169,7 +175,6 @@ def security_group_delete(ec2, client, security_group_name):
           security_groups = client.describe_security_groups()
           for sg in security_groups['SecurityGroups']:
                if sg['GroupName'] == security_group_name:
-                    print("security group existed")
                     security_group_id = sg['GroupId']
           try:
                client.delete_security_group(GroupId=security_group_id)
@@ -179,6 +184,7 @@ def security_group_delete(ec2, client, security_group_name):
      except ClientError as e:
           print("Security group didn't exist")
 
+# Deletes the right instances 
 def delete_instances(ec2, client, key):
      all_deleted = False
      response = client.describe_instances(Filters=[
@@ -210,6 +216,7 @@ def delete_instances(ec2, client, key):
 
      print("All instances were deleted successfully")
 
+# Creates instance
 def create_instance(ec2, client, ami, key_name, security_group_name, userdata):
      found = False
      # create a new EC2 instance
@@ -256,47 +263,7 @@ def create_instance(ec2, client, ami, key_name, security_group_name, userdata):
                     
      return instance_id, db_ip
 
-def delete_ami(client, ami_name):
-     response = client.describe_images(
-          Filters=[
-               {
-                    'Name': 'tag:Name',
-                    'Values': [
-                         'customizedAMI',
-                    ]
-               },
-          ],
-     )
-     print("as amis sao", response)
-
-     # response = client.deregister_image(
-     #      ImageId = ami_id,
-     # )    
-
-def create_ami(client, key_name, ami_name):
-     
-     found = False
-
-     while not found:
-          response = client.describe_instances(Filters=[
-               {
-                    'Name': 'tag:Name',
-                    'Values': [
-                         key_name,
-                    ]
-               },
-          ])
-
-          ami_id = ''
-          for each in response['Reservations']:
-               if each['Instances'][0]['State']['Name'] == 'running':
-                    found = True
-                    db_ip = each['Instances'][0]['PublicIpAddress']
-                    instance_id= each['Instances'][0]['InstanceId']
-                    ami_id = client_nv.create_image(InstanceId=instance_id, Name=ami_name)
-                    return ami_id
-     return ami_id
-
+# Creates loadbalancer
 def create_loadbalancer(client, client_lb, security_group_name):
      security_group_id = client.describe_security_groups(GroupNames=[security_group_name])["SecurityGroups"][0]["GroupId"]
      response = client.describe_subnets()
@@ -330,10 +297,11 @@ def create_loadbalancer(client, client_lb, security_group_name):
 
      waiter = client_lb.get_waiter('load_balancer_exists')
      waiter.wait(LoadBalancerArns=[lb_arn])
-     time.sleep(15)
+     time.sleep(20)
 
      return lb_arn
 
+# Deletes the loadbalancer
 def delete_loadbalancer(client):
      erased = 0
      arn = ''
@@ -351,8 +319,8 @@ def delete_loadbalancer(client):
                if lb['LoadBalancerName'] == 'mayra-loadbalancer':
                     erased = 0
      print("Load Balancer deleted successfully")
-     return arn
 
+# Deletes the target group
 def delete_target_group(client):
      response = client.describe_target_groups()
      for tg in response['TargetGroups']:
@@ -365,6 +333,7 @@ def delete_target_group(client):
                except ClientError as e:
                     print(e)
 
+# Creates the target group
 def create_target_group(client, client_lb):
      response = client.describe_vpcs()
      VPC_id = response['Vpcs'][0]['VpcId']
@@ -388,6 +357,7 @@ def create_target_group(client, client_lb):
 
      return arn
 
+# Creates listener
 def create_listener(client_lb, lb_arn, tg_arn):
      response = client_lb.create_listener(
                LoadBalancerArn = lb_arn,
@@ -400,19 +370,19 @@ def create_listener(client_lb, lb_arn, tg_arn):
                     }
                ])
 
+# Deletes listener
 def delete_listener(client):
      lb_arn = ''
      response = client.describe_load_balancers()
      for lb in response['LoadBalancers']:
           if lb['LoadBalancerName'] == 'mayra-loadbalancer':
-               arn = lb['LoadBalancerArn']
+               lb_arn = lb['LoadBalancerArn']
      if lb_arn != '':
           response = client.describe_listeners(LoadBalancerArn=lb_arn)
           
           for listener in response['Listeners']:
-               print("AAAAAAAAAA", listener)
                if listener['LoadBalancerArn'] == lb_arn:
-                    "Found the right listener"
+                    print("Found the right listener")
                     try:
                          response = client.delete_listener(
                               ListenerArn=listener['ListenerArn']
@@ -422,7 +392,7 @@ def delete_listener(client):
      else: 
           print("Load Balancer wasn't found")
 
-
+# Creates autoscaling
 def create_autoscaling(client_as, tg_arn, instance_id):
      erased = 0
      #esperando ate que seja realmente deletada
@@ -432,7 +402,6 @@ def create_autoscaling(client_as, tg_arn, instance_id):
           for asg in response['AutoScalingGroups']:
                if asg['AutoScalingGroupName'] == 'MayAutoscaling':
                     erased = 0
-     print("nao exite o auto scaling tamo bem")
      try:
           response = client_as.create_auto_scaling_group(
                AutoScalingGroupName='MayAutoscaling',
@@ -452,6 +421,7 @@ def create_autoscaling(client_as, tg_arn, instance_id):
      except ClientError as e:
           print(e)
      
+# Deletes autoscaling
 def delete_autoscaling(client):
      response = client.describe_auto_scaling_groups()
      for asg in response['AutoScalingGroups']:
@@ -462,6 +432,7 @@ def delete_autoscaling(client):
                )
      print("Autoscaling deleted successfully")
 
+# Deletes launch configuration
 def delete_launch_configuration(client):
      try:
           response = client.delete_launch_configuration(
@@ -470,6 +441,7 @@ def delete_launch_configuration(client):
      except ClientError as e:
           print(e)
 
+# Userdata to create the DB instance
 userdata_oh = '''#!/bin/bash
                sudo apt update
                sudo apt install postgresql postgresql-contrib -y
@@ -489,6 +461,7 @@ security_group_delete(ec2_oh, client_oh, 'security_db')
 security_groups(client_oh, 'security_db')
 instance_oh_id, db_ip = create_instance(ec2_oh, client_oh, ami_oh, 'ec2-keypair_oh', 'security_db', userdata_oh)
 
+# Userdata to create the ORM instance
 userdata_nv = '''#!/bin/bash
                cd /home/ubuntu
                sudo apt update
@@ -505,7 +478,7 @@ create_key(ec2_nv, 'ec2-keypair_nv', client_nv)
 delete_autoscaling(client_as)
 delete_launch_configuration(client_as)
 delete_listener(client_lb)
-lb_arn = delete_loadbalancer(client_lb)
+delete_loadbalancer(client_lb)
 delete_target_group(client_lb)
 delete_instances(ec2_nv, client_nv, 'ec2-keypair_nv')
 security_group_delete(ec2_nv, client_nv,'security_orm')
