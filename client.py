@@ -6,7 +6,18 @@ import json
 for arg in sys.argv:
     print(arg)
 
-url = 'http://mayra-loadbalancer-1088975921.us-east-1.elb.amazonaws.com:8080/tasks'
+def get_dns(name):
+    f = open(name + ".txt", "r")
+    if f.mode == 'r':
+        dns = f.read()
+    return dns
+
+dns = get_dns("dns_loadbalancer")
+
+
+url = 'http://' + dns + ':8080/tasks'
+
+
 
 def get():
     response = requests.get(url + '/get')

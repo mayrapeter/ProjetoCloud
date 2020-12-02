@@ -27,6 +27,13 @@ def checks_if_key_exists_locally_then_deletes(key_name):
      else:
           print("Doesn't exist locally")
 
+def delete_file_dns(name):
+     if os.path.exists(name + '.txt'):
+          os.remove(name + '.txt')  
+          print(" DNS file existed locally, successfully deleted")
+     else:
+          print("DNS file didn't exist locally")
+
 # Checks if the key already exists remotely, if it does deletes it
 def checks_if_key_exists_remotely_then_deletes(key_name, client):
      # getting all key pairs
@@ -52,6 +59,12 @@ def create_key(ec2, key_name, client):
      outfile.write(KeyPairOut)
      outfile.close()
      print("Key created locally and remotely")
+
+def create_file_dns(lb_dns, name):
+     outfile = open(name + '.txt','w')
+     outfile.write(lb_dns)
+     outfile.close()
+     print("Load balancer file created successfully")
 
 # Creates the security group for the DB instance
 def security_groups_create_postgres(client, security_group_name, VPC_id):
@@ -294,12 +307,13 @@ def create_loadbalancer(client, client_lb, security_group_name):
           IpAddressType='ipv4'
      )
      lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
+     lb_dns = response['LoadBalancers'][0]['DNSName']
 
      waiter = client_lb.get_waiter('load_balancer_exists')
      waiter.wait(LoadBalancerArns=[lb_arn])
      time.sleep(20)
 
-     return lb_arn
+     return lb_arn, lb_dns
 
 # Deletes the loadbalancer
 def delete_loadbalancer(client):
@@ -475,6 +489,7 @@ userdata_nv = '''#!/bin/bash
 checks_if_key_exists_locally_then_deletes('ec2-keypair_nv')
 checks_if_key_exists_remotely_then_deletes('ec2-keypair_nv', client_nv)
 create_key(ec2_nv, 'ec2-keypair_nv', client_nv)
+delete_file_dns("dns_loadbalancer")
 delete_autoscaling(client_as)
 delete_launch_configuration(client_as)
 delete_listener(client_lb)
@@ -487,7 +502,8 @@ security_groups(client_nv, 'security_loadbalancer')
 security_groups(client_nv, 'security_orm')
 instance_nv_id = create_instance(ec2_nv, client_nv, nv_ami, 'ec2-keypair_nv', 'security_orm', userdata_nv)[0]
 
-lb_arn = create_loadbalancer(client_nv, client_lb, 'security_loadbalancer')
+lb_arn, lb_dns = create_loadbalancer(client_nv, client_lb, 'security_loadbalancer')
+create_file_dns(lb_dns, "dns_loadbalancer")
 tg_arn = create_target_group(client_nv, client_lb)
 create_listener(client_lb, lb_arn, tg_arn)
 create_autoscaling(client_as, tg_arn, instance_nv_id)
